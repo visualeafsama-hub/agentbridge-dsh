@@ -4,8 +4,13 @@
 （Claude Code ↔ Codex 的双向桥）的适配器。DSH 不是顶替某一端，而是作为
 **独立的对等成员**，既能与 `abg claude` 对接，也能与 `abg codex` 对接。
 
+> ### 🧩 配套插件：[dsh-pair-panel](https://github.com/visualeafsama-hub/dsh-pair-panel)
+> Codex 对端面板 —— 在 DSH Web GUI 里与会话并排显示 Codex 的实时状态、
+> 上下文用量与消息流。本仓库负责 MCP 适配器与推送钩子，面板 UI 由该插件提供。
+
 - agent-bridge 源码：https://github.com/raysonmeng/agent-bridge
 - agent-bridge 文档（中文）：https://raysonmeng.github.io/agent-bridge/zh/
+- 配套插件 dsh-pair-panel：https://github.com/visualeafsama-hub/dsh-pair-panel
 
 > **验证状态**：目前只在 **Codex 侧**（channel / attach，Role A）做过真实 pair
 > 联调。Role B（`--server`，对接 `abg claude`）有完整实现与 mock 闭环测试，
