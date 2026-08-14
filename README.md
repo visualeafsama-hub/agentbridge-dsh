@@ -4,6 +4,10 @@
 （Claude Code ↔ Codex 的双向桥）的适配器。DSH 不是顶替某一端，而是作为
 **独立的对等成员**，既能与 `abg claude` 对接，也能与 `abg codex` 对接。
 
+> **验证状态**：目前只在 **Codex 侧**（channel / attach，Role A）做过真实 pair
+> 联调。Role B（`--server`，对接 `abg claude`）有完整实现与 mock 闭环测试，
+> 但**尚未在真实 abg claude pair 上验证**——如需使用请自行联调并反馈。
+
 ## 安装
 
 前置：`bun`（脚本运行时）、agent-bridge（`abg` 命令，提供 daemon/pair 生态）。
