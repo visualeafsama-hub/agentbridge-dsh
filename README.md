@@ -4,6 +4,9 @@
 （Claude Code ↔ Codex 的双向桥）的适配器。DSH 不是顶替某一端，而是作为
 **独立的对等成员**，既能与 `abg claude` 对接，也能与 `abg codex` 对接。
 
+- agent-bridge 源码：https://github.com/raysonmeng/agent-bridge
+- agent-bridge 文档（中文）：https://raysonmeng.github.io/agent-bridge/zh/
+
 > **验证状态**：目前只在 **Codex 侧**（channel / attach，Role A）做过真实 pair
 > 联调。Role B（`--server`，对接 `abg claude`）有完整实现与 mock 闭环测试，
 > 但**尚未在真实 abg claude pair 上验证**——如需使用请自行联调并反馈。
@@ -28,6 +31,10 @@ cd agentbridge-dsh
 ```bash
 abg dsh --pair NAME          # 一键：MCP server + DSH web + chromium 窗口 + attach
 ```
+
+可选皮肤（左右鲸鱼娘角色，**第三方仓库**，不影响适配器功能）：
+[dsh-deep-whale / maid-atelier](https://github.com/Small-tailqwq/dsh-deep-whale) ·
+`git clone https://github.com/Small-tailqwq/dsh-deep-whale.git` · 许可见其仓库。
 
 ## 原理
 
