@@ -4,6 +4,27 @@
 （Claude Code ↔ Codex 的双向桥）的适配器。DSH 不是顶替某一端，而是作为
 **独立的对等成员**，既能与 `abg claude` 对接，也能与 `abg codex` 对接。
 
+## 安装
+
+前置：`bun`（脚本运行时）、agent-bridge（`abg` 命令，提供 daemon/pair 生态）。
+
+```bash
+git clone https://github.com/visualeafsama-hub/agentbridge-dsh.git
+cd agentbridge-dsh
+./install.sh                 # 安装 shim 到 ~/.bun/bin/abg
+# 或指定位置：./install.sh /custom/bin/abg
+```
+
+`install.sh` 会生成 `abg` 薄包装：所有 `dsh` 子命令路由到本适配器，
+其余命令（doctor / pairs / resume / kill / --pair ...）原样透传给真 abg。
+
+启动 DSH 侧（可选配 [dsh-pair-panel](https://github.com/visualeafsama-hub/dsh-pair-panel)
+插件显示 Codex 对端面板）：
+
+```bash
+abg dsh --pair NAME          # 一键：MCP server + DSH web + chromium 窗口 + attach
+```
+
 ## 原理
 
 agent-bridge 的拓扑（实测自 v0.1.30）：
