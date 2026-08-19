@@ -286,7 +286,15 @@ async function cmdEnv(args) {
   log(`    config: { serverName: abg, transport: streamable-http, url: ${mcpUrl} }`);
   log(`之后本会话工具列表出现 mcp__abg__send_message / get_messages / pair_status`);
 
-  const { mode, engine } = await makeEngine(pair, args, log);
+  let mode;
+  let engine;
+  try {
+    ({ mode, engine } = await makeEngine(pair, args, log));
+  } catch (e) {
+    log(`engine 初始化失败（${e.message}），进入 standby：GUI/面板照常启动`);
+    mode = "standby";
+    engine = new StandbyEngine({ proxyPort, controlPort: pair.ports.controlPort, pairName: pair.name, log });
+  }
   writeBridgeMark("pair", pair.name);
   writeBridgeMark("pid", String(process.pid));
   // Push notifications: when codex sends a message while no send_message
@@ -467,7 +475,45 @@ async function cmdServer(args) {
 
 // Default engine: attach (DSH as the pair's claude-side seat — messages land
 // in the codex thread the TUI shows). Falls back to the secondary channel
-// when attach is impossible (no control token / seat occupied).
+// when attach is impossible (no control token / seat occupied). When the
+// pair's daemon (peer side) is not running at all, fall back to a standby
+// engine: the GUI + MCP still start, the panel follows the pair via files,
+// and MCP tools lazily reconnect once `abg claude --pair X` brings the
+// daemon up — so `abg dsh --pair <new>` never crashes on an empty pair.
+class StandbyEngine {
+  constructor({ proxyPort, controlPort, pairName, log } = {}) {
+    this.proxyPort = proxyPort;
+    this.controlPort = controlPort;
+    this.pairName = pairName ?? "";
+    this.log = log;
+    this.channel = null;
+  }
+  get url() { return `ws://127.0.0.1:${this.proxyPort}`; }
+  get ws() { return this.channel?.ws ?? null; }
+  async ensure() {
+    if (this.channel && this.channel.ws?.readyState === WebSocket.OPEN) return this.channel;
+    this.channel = null;
+    try {
+      const c = new ChannelClient({ proxyPort: this.proxyPort, log: this.log });
+      await c.connect();
+      await c.initialize();
+      this.channel = c;
+    } catch (e) {
+      this.log(`standby: peer daemon not reachable at ws://127.0.0.1:${this.proxyPort} (${e?.message ?? e})`);
+      this.channel = null;
+    }
+    return this.channel;
+  }
+  async sendMessage(text, opts = {}) {
+    const c = await this.ensure();
+    if (!c) throw new Error(`pair peer (daemon) is not running — start the codex/claude side first, e.g. \`abg claude --pair ${this.pairName}\`, then retry`);
+    return c.sendMessage(text, opts);
+  }
+  drainInbound() {
+    return this.channel && this.channel.ws?.readyState === WebSocket.OPEN ? this.channel.drainInbound() : [];
+  }
+}
+
 async function makeEngine(pair, args, log) {
   const wantChannel = args.includes("--channel");
   if (!wantChannel) {
@@ -483,11 +529,16 @@ async function makeEngine(pair, args, log) {
     }
   }
   const proxyPort = parseInt(argValue(args, ["--proxy-port"], String(pair.ports.proxyPort)), 10);
-  const client = new ChannelClient({ proxyPort, log });
-  await client.connect();
-  await client.initialize();
-  log(`channel: connected via proxy ws://127.0.0.1:${proxyPort}`);
-  return { mode: "channel", engine: client };
+  try {
+    const client = new ChannelClient({ proxyPort, log });
+    await client.connect();
+    await client.initialize();
+    log(`channel: connected via proxy ws://127.0.0.1:${proxyPort}`);
+    return { mode: "channel", engine: client };
+  } catch (e) {
+    log(`channel 不可用（${e.message}）——对端 daemon 还没起来，进入 standby：GUI/面板照常启动，等对端起来后 MCP 工具会自动重连`);
+    return { mode: "standby", engine: new StandbyEngine({ proxyPort, controlPort: pair.ports.controlPort, pairName: pair.name, log }) };
+  }
 }
 
 async function cmdDaemonMcp(args) {
