@@ -232,12 +232,27 @@ function startDetached(cmd, args, logName) {
 }
 
 function chromiumAppRunning() {
-  const res = spawnSync("pgrep", ["-f", `chromium.*--app=${DSH_WEB_URL.replace(/[/:]/g, ".")}`]);
-  // URL contains regex chars; fall back to a simple match below
+  // Prefer the recorded pid (same file the dsh wrapper writes): alive and
+  // pointing at our URL means a window is open. Fall back to a strict
+  // process scan — the loose "chromium.*--app=" pattern can self-match a
+  // parent shell whose cmdline contains both words.
+  try {
+    const pid = readFileSync(join(RUN_DIR, "chromium.pid"), "utf8").trim();
+    if (/^\d+$/.test(pid)) {
+      try {
+        process.kill(Number(pid), 0);
+        const cmd = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+        if (cmd.includes(`--app=${DSH_WEB_URL}`)) return true;
+      } catch {}
+    }
+  } catch {}
+  const res = spawnSync("pgrep", ["-f", `chromium[^ ]* .*--incognito --app=${DSH_WEB_URL.replace(/[/:.]/g, "\\$&")}`]);
   if (res.status === 0 && res.stdout.toString().trim().length > 0) return true;
   const res2 = spawnSync("ps", ["-eo", "args"]);
   if (res2.status !== 0) return false;
-  return res2.stdout.toString().split("\n").some((l) => l.includes("--app=") && l.includes(DSH_WEB_URL) && l.includes("chromium"));
+  return res2.stdout.toString().split("\n").some(
+    (l) => l.includes("chromium") && l.includes("--incognito") && l.includes(`--app=${DSH_WEB_URL}`)
+  );
 }
 
 async function cmdEnv(args) {

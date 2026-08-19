@@ -1,0 +1,81 @@
+#!/bin/sh
+# dsh wrapper — bare `dsh` / `dsh web` boots the web GUI and opens the
+# chromium app window (same convention as `abg dsh`). The MCP bridge stays
+# with `abg dsh --pair X`. Any other invocation passes through to the real
+# dsh (e.g. `dsh --profile tui`, `dsh web --port 0`).
+#
+# Installed by install.sh (default: ~/.bun/bin/dsh). Self-locating: finds
+# the real dsh on PATH and skips itself, so any install path works.
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+
+find_real_dsh() {
+  IFS=:
+  for d in $PATH; do
+    [ -n "$d" ] || d=.
+    if [ -x "$d/dsh" ]; then
+      rp="$(readlink -f "$d/dsh" 2>/dev/null || echo "$d/dsh")"
+      if [ "$rp" != "$SELF" ]; then
+        echo "$d/dsh"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+REAL_DSH="$(find_real_dsh)"
+if [ -z "$REAL_DSH" ]; then
+  echo "dsh: real dsh not found on PATH" >&2
+  exit 1
+fi
+
+RUN_DIR="${ABG_RUN_DIR:-$HOME/agentbridge-dsh/run}"
+WEB_URL="${ABG_DSH_WEB_URL:-http://127.0.0.1:3080}"
+CHROMIUM="${ABG_CHROMIUM_CMD:-chromium}"
+
+boot_web_chrome() {
+  mkdir -p "$RUN_DIR"
+  # 1) dsh web, detached — same log/pid files abg-dsh reads
+  if curl -sf -o /dev/null "$WEB_URL/" 2>/dev/null; then
+    echo "dsh: web GUI already running at $WEB_URL (skip)"
+  else
+    nohup "$REAL_DSH" web >> "$RUN_DIR/dsh-web" 2>&1 &
+    echo $! > "$RUN_DIR/dsh-web.pid"
+    echo "dsh: starting web GUI at $WEB_URL (pid $(cat "$RUN_DIR/dsh-web.pid"))"
+    i=0
+    until curl -sf -o /dev/null "$WEB_URL/" 2>/dev/null; do
+      i=$((i + 1))
+      [ "$i" -ge 60 ] && break
+      sleep 1
+    done
+  fi
+  # 2) chromium app window (skip if the recorded pid is still alive and
+  #    points at this URL; cmdline-scanning would self-match the checker)
+  CHROME_PID=""
+  [ -f "$RUN_DIR/chromium.pid" ] && CHROME_PID=$(cat "$RUN_DIR/chromium.pid")
+  if [ -n "$CHROME_PID" ] && kill -0 "$CHROME_PID" 2>/dev/null && tr '\0' ' ' < "/proc/$CHROME_PID/cmdline" 2>/dev/null | grep -q -- "--app=$WEB_URL"; then
+    echo "dsh: chromium window already open (pid $CHROME_PID, skip)"
+  else
+    nohup "$CHROMIUM" --incognito "--app=$WEB_URL" >> "$RUN_DIR/chromium" 2>&1 &
+    echo $! > "$RUN_DIR/chromium.pid"
+    echo "dsh: opened chromium window -> $WEB_URL"
+  fi
+}
+
+case "$1" in
+  "")
+    boot_web_chrome
+    exit 0
+    ;;
+  web)
+    shift
+    if [ "$#" -eq 0 ]; then
+      boot_web_chrome
+      exit 0
+    fi
+    exec "$REAL_DSH" web "$@"
+    ;;
+  *)
+    exec "$REAL_DSH" "$@"
+    ;;
+esac
