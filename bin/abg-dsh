@@ -21,9 +21,10 @@
 // ~/.local/state/agentbridge/pairs), matched by cwd or --pair name; ports from
 // the pair's daemon.json (fallback: slot*10 offset from 4500).
 
-import { readFileSync, existsSync, mkdirSync, writeFileSync, openSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, openSync, realpathSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { ChannelClient } from "../lib/channel-client.js";
 import { watchPair, currentThreadId, rolloutFile, followStream } from "../lib/watch.js";
@@ -66,6 +67,49 @@ function argValue(args, names, fallback) {
 
 // ── pair discovery ─────────────────────────────────────────────────────────
 
+const PAIR_BASE_PORT = 4500;
+const PAIR_SLOT_STRIDE = 10;
+
+/** Mirror abg's validatePairId: letters/digits/._- only, 1-64 chars. */
+function validatePairName(raw) {
+  const id = String(raw == null ? "" : raw).trim();
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(id)) {
+    throw new Error(`invalid --pair name: ${JSON.stringify(raw)} — letters/digits/._- only, 1-64 chars`);
+  }
+  if (id === "." || id === ".." || id.endsWith(".") || /^(CON|NUL|COM\d)$/i.test(id)) {
+    throw new Error(`invalid --pair name: ${JSON.stringify(raw)}`);
+  }
+  return id;
+}
+
+/** Mirror abg's derivePairId: slug-name + sha256(cwd+name) short hash. */
+function derivePairId(cwd, name) {
+  const base = realpathSync(cwd);
+  const hash = createHash("sha256").update(base).update("\x00").update(name.toLowerCase()).digest("hex").slice(0, 8);
+  const slug = name.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "pair";
+  return `${slug}-${hash}`;
+}
+
+function pickLowestFreeSlot(pairs) {
+  const used = new Set(pairs.map((p) => p.slot));
+  let slot = 0;
+  while (used.has(slot)) slot += 1;
+  return slot;
+}
+
+/** Load + mutate + atomically persist the pair registry. */
+function updateRegistry(mutator) {
+  let registry = { version: 1, pairs: [] };
+  if (existsSync(REGISTRY)) {
+    try { registry = JSON.parse(readFileSync(REGISTRY, "utf8")); } catch {}
+  }
+  const next = mutator(registry);
+  const tmp = REGISTRY + ".tmp" + Date.now();
+  writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n");
+  renameSync(tmp, REGISTRY);
+  return next;
+}
+
 function discoverPair(args) {
   const cwd = process.cwd();
   const name = argValue(args, ["--pair"], process.env.ABG_PAIR_NAME ?? null);
@@ -79,8 +123,32 @@ function discoverPair(args) {
   }
   const inCwd = registry.pairs.filter((p) => p.cwd === cwd);
   let pick = null;
-  if (name) pick = inCwd.find((p) => p.name === name) ?? registry.pairs.find((p) => p.name === name) ?? null;
-  if (!pick) pick = inCwd.find((p) => isLive(p)) ?? inCwd[0] ?? registry.pairs[0] ?? null;
+  let created = false;
+  if (name) {
+    const valid = validatePairName(name);
+    pick = inCwd.find((p) => p.name === valid) ?? null;
+    if (!pick) {
+      const global = registry.pairs.find((p) => p.name === valid);
+      if (global) {
+        // Mirror abg: a pair is scoped to its directory — never silently
+        // reuse a live pair registered elsewhere (that mislinked panel).
+        throw new Error(
+          `--pair ${valid} refers to pair "${global.pairId}" registered for ${global.cwd}, ` +
+          `but you are in ${cwd}. cd into that directory to use it, or pass a new short name to create a pair here.`
+        );
+      }
+      // abg's `--pair <new>` auto-builds a brand-new pair in this cwd.
+      const newPrefix = derivePairId(cwd, valid);
+      const pairId = global ? global.pairId : newPrefix;
+      const slot = pickLowestFreeSlot(registry.pairs);
+      const entry = { pairId, slot, cwd, name: valid, source: "flag", createdAt: new Date().toISOString() };
+      registry = updateRegistry((reg) => ({ version: 1, pairs: [...reg.pairs, entry] }));
+      pick = entry;
+      created = true;
+    }
+  } else {
+    pick = inCwd.find((p) => isLive(p)) ?? inCwd[0] ?? registry.pairs[0] ?? null;
+  }
   if (!pick) {
     throw new Error(
       `no agent-bridge pair found for cwd=${cwd}${name ? ` (name=${name})` : ""}. ` +
@@ -88,8 +156,11 @@ function discoverPair(args) {
     );
   }
   const ports = pairPortsOf(pick);
-  log(`pair: ${pick.name} (${pick.pairId}) ports=${ports.appPort}/${ports.proxyPort}/${ports.controlPort}`);
-  return { ...pick, ports };
+  log(`pair: ${pick.name} (${pick.pairId}) ports=${ports.appPort}/${ports.proxyPort}/${ports.controlPort}${created ? " (new)" : ""}`);
+  if (created) {
+    log(`new pair "${pick.name}" registered under ${cwd} — start the codex/daemon side with: abg claude --pair ${pick.name}`);
+  }
+  return { ...pick, ports, created };
 }
 
 function isLive(p) {
