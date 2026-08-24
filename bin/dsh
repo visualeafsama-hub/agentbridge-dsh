@@ -1,6 +1,7 @@
 #!/bin/sh
-# dsh wrapper — bare `dsh` / `dsh web` boots the web GUI and opens the
-# chromium app window (same convention as `abg dsh`). The MCP bridge stays
+# dsh wrapper — bare `dsh` / `dsh web` boots the web GUI in the FOREGROUND
+# (the terminal holds the process; Ctrl-C stops it, like `abg dsh`) and
+# opens the chromium app window once the GUI answers. The MCP bridge stays
 # with `abg dsh --pair X`. Any other invocation passes through to the real
 # dsh (e.g. `dsh --profile tui`, `dsh web --port 0`).
 #
@@ -33,33 +34,46 @@ RUN_DIR="${ABG_RUN_DIR:-$HOME/agentbridge-dsh/run}"
 WEB_URL="${ABG_DSH_WEB_URL:-http://127.0.0.1:3080}"
 CHROMIUM="${ABG_CHROMIUM_CMD:-chromium}"
 
-boot_web_chrome() {
-  mkdir -p "$RUN_DIR"
-  # 1) dsh web, detached — same log/pid files abg-dsh reads
-  if curl -sf -o /dev/null "$WEB_URL/" 2>/dev/null; then
-    echo "dsh: web GUI already running at $WEB_URL (skip)"
-  else
-    nohup "$REAL_DSH" web >> "$RUN_DIR/dsh-web" 2>&1 &
-    echo $! > "$RUN_DIR/dsh-web.pid"
-    echo "dsh: starting web GUI at $WEB_URL (pid $(cat "$RUN_DIR/dsh-web.pid"))"
-    i=0
-    until curl -sf -o /dev/null "$WEB_URL/" 2>/dev/null; do
-      i=$((i + 1))
-      [ "$i" -ge 60 ] && break
-      sleep 1
-    done
-  fi
-  # 2) chromium app window (skip if the recorded pid is still alive and
-  #    points at this URL; cmdline-scanning would self-match the checker)
+wait_for_web() {
+  i=0
+  until curl -sf -o /dev/null "$WEB_URL/" 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -ge 120 ] && return 1
+    sleep 1
+  done
+  return 0
+}
+
+ensure_chrome() {
   CHROME_PID=""
   [ -f "$RUN_DIR/chromium.pid" ] && CHROME_PID=$(cat "$RUN_DIR/chromium.pid")
   if [ -n "$CHROME_PID" ] && kill -0 "$CHROME_PID" 2>/dev/null && tr '\0' ' ' < "/proc/$CHROME_PID/cmdline" 2>/dev/null | grep -q -- "--app=$WEB_URL"; then
     echo "dsh: chromium window already open (pid $CHROME_PID, skip)"
-  else
-    nohup "$CHROMIUM" --incognito "--app=$WEB_URL" >> "$RUN_DIR/chromium" 2>&1 &
-    echo $! > "$RUN_DIR/chromium.pid"
-    echo "dsh: opened chromium window -> $WEB_URL"
+    return 0
   fi
+  nohup "$CHROMIUM" --incognito "--app=$WEB_URL" >> "$RUN_DIR/chromium" 2>&1 &
+  echo $! > "$RUN_DIR/chromium.pid"
+  echo "dsh: opened chromium window -> $WEB_URL"
+}
+
+boot_web_chrome() {
+  mkdir -p "$RUN_DIR"
+  if curl -sf -o /dev/null "$WEB_URL/" 2>/dev/null; then
+    echo "dsh: web GUI already running at $WEB_URL (skip; pid $(cat "$RUN_DIR/dsh-web.pid" 2>/dev/null || echo '?'))"
+    ensure_chrome
+    return 0
+  fi
+  # Chromium opener: survives the foreground web below, opens the window
+  # as soon as the GUI answers.
+  ( wait_for_web && ensure_chrome ) &
+  # Foreground: the terminal holds the web process — Ctrl-C stops it.
+  "$REAL_DSH" web
+  RC=$?
+  # Close the chromium window we opened (same semantics as `abg dsh` Ctrl-C).
+  if [ -f "$RUN_DIR/chromium.pid" ]; then
+    kill "$(cat "$RUN_DIR/chromium.pid")" 2>/dev/null
+  fi
+  exit $RC
 }
 
 case "$1" in
