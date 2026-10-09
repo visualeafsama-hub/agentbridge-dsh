@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { codexStubMain } from "/home/visualeaf/agentbridge-dsh/lib/app-server.js";
+import { codexStubMain } from "../../lib/app-server.js";
 const code = codexStubMain(process.argv);
 if (typeof code === "number") process.exit(code);
 // null = app-server mode: keep the process alive

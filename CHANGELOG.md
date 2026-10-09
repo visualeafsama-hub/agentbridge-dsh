@@ -17,7 +17,7 @@
 ### `dsh` web+chrome 包装脚本（`bin/dsh` + install.sh）
 - 裸 `dsh` / `dsh web` 现在默认：**接管 3080 → 前台运行 `dsh web`**（终端持有进程，Ctrl-C 停止，与 `abg dsh` 一致）+ 后台子进程等 3080 就绪后打开 chromium `--app` 窗口；web 结束时关闭本次打开的窗口。
 - **接管**：发现端口被旧实例（先前脱离式孤儿/abg 脱离式 web）占用时，先杀掉它再前台起——`dsh` 永远是唯一持有者，不再"跳过→孤儿"。
-- 自定位真实 dsh（跳过自身），任意 PATH 位置可用；与 abg 共享 `~/agentbridge-dsh/run/` 的 pid/日志约定，`abg dsh --pair X` 后续运行会自动跳过 web/chrome，只补 MCP。
+- 自定位真实 dsh（跳过自身），任意 PATH 位置可用；与 abg 共享 `~/.local/state/agentbridge/dsh/` 的 pid/日志约定，`abg dsh --pair X` 后续运行会自动跳过 web/chrome，只补 MCP。
 - chromium 检测用 **pid 文件 + `kill -0` + `/proc/<pid>/cmdline`**；abg-dsh 的 `chromiumAppRunning` 同步加固（原先的 `ps|grep "chromium.*--app="` 会把自己/父 shell 的 cmdline 匹配进去——假阳性）。
 
 ## 2026-08-14

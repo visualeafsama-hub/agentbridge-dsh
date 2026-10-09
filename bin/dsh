@@ -31,7 +31,7 @@ if [ -z "$REAL_DSH" ]; then
   exit 1
 fi
 
-RUN_DIR="${ABG_RUN_DIR:-$HOME/agentbridge-dsh/run}"
+RUN_DIR="${ABG_RUN_DIR:-$HOME/.local/state/agentbridge/dsh}"
 WEB_URL="${ABG_DSH_WEB_URL:-http://127.0.0.1:3080}"
 CHROMIUM="${ABG_CHROMIUM_CMD:-chromium}"
 

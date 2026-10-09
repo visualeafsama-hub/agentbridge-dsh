@@ -37,7 +37,10 @@ const log = (m) => console.error(`[abg-dsh] ${m}`);
 const STATE_DIR = process.env.ABG_STATE_DIR ?? join(homedir(), ".local/state/agentbridge");
 const REGISTRY = join(STATE_DIR, "pairs/registry.json");
 const DEFAULT_MCP_PORT = parseInt(process.env.ABG_MCP_PORT ?? "8765", 10);
-const RUN_DIR = process.env.ABG_RUN_DIR ?? join(homedir(), "agentbridge-dsh/run");
+// Runtime files must not depend on where this repository happens to be cloned.
+// Keeping them beside agent-bridge's own state also lets the DSH panel find the
+// active bridge after the source tree is moved.
+const RUN_DIR = process.env.ABG_RUN_DIR ?? join(homedir(), ".local/state/agentbridge/dsh");
 const DSH_WEB_URL = process.env.ABG_DSH_WEB_URL ?? "http://127.0.0.1:3080";
 const DSH_WEB_PORT = parseInt(new URL(DSH_WEB_URL).port, 10) || 3080;
 const DSH_WEB_CMD = (process.env.ABG_DSH_WEB_CMD ?? "dsh web").split(/\s+/).filter(Boolean);

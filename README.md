@@ -91,7 +91,8 @@ abg dsh --pair NAME     # 指定 pair（`abg --pair NAME dsh` 写法同样支持
 abg dsh --http-port N   # MCP 端口（默认 8765）
 abg dsh --server 只起适配器；默认模式顺带拉起 DSH web（3080 未监听时）和
 chromium --app 窗口（未打开时）。环境变量可覆盖：
-ABG_DSH_WEB_URL / ABG_DSH_WEB_CMD / ABG_CHROMIUM_CMD / ABG_MCP_PORT / ABG_STATE_DIR
+ABG_DSH_WEB_URL / ABG_DSH_WEB_CMD / ABG_CHROMIUM_CMD / ABG_MCP_PORT / ABG_STATE_DIR /
+ABG_RUN_DIR（默认 `~/.local/state/agentbridge/dsh`）
 
 # 底层命令（高级用法）
 abg dsh channel --proxy-port N --send "hello codex"   # 一次性发消息等回复
@@ -204,7 +205,7 @@ DSH 窗口改用无痕模式启动：`chromium --incognito --app=<webUrl>`。
 
 ### 接手说明（给下一个 agent / 新会话）
 
-- 代码全部在 `~/agentbridge-dsh/`：`lib/control-client.js`(attach)、`lib/channel-client.js`(secondary)、`lib/mcp.js`、`lib/watch.js`、`lib/app-server.js`(Role B)、`bin/abg-dsh`。
+- 代码位于你克隆的 `agentbridge-dsh/` 目录：`lib/control-client.js`(attach)、`lib/channel-client.js`(secondary)、`lib/mcp.js`、`lib/watch.js`、`lib/app-server.js`(Role B)、`bin/abg-dsh`。运行状态统一写入 `~/.local/state/agentbridge/dsh/`，不依赖源码位置。
 - `~/.bun/bin/abg` 是 shim：只拦截 `dsh` 子命令，其余透传真 abg。
 - 常用：`abg dsh --pair TST`（起环境+attach+对话流，Ctrl-C 全关）、`abg dsh attach --pair X --send "..."`、`abg dsh watch --pair X [-f]`、`abg dsh doctor`。
 - 限制：attach 占 pair 的 claude 席位（TST 是 DSH 专属；KF/BF 有 claude 插件不能 attach）。
